@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adobe Analytics & Target Demo Store</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#222}
+header{background:#222;color:#fff;padding:18px 40px;display:flex;justify-content:space-between;align-items:center}
+header h1{margin:0}.cart{cursor:pointer;font-weight:bold}.container{width:90%;max-width:1200px;margin:30px auto}
+.filters{display:flex;gap:10px;margin-bottom:25px}input,select{padding:12px;border:1px solid #ccc;border-radius:5px}
+input{width:300px}.products{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
+.product{background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.product img{width:100%;height:180px;object-fit:cover;border-radius:6px}.product h3{margin-bottom:8px}
+.price{font-size:20px;font-weight:bold;margin:10px 0}.category{color:#777;font-size:14px}
+button{border:none;padding:12px 18px;border-radius:5px;cursor:pointer;margin-top:8px}
+.add-cart{background:#1473e6;color:#fff;width:100%}.view-product{background:#eee;width:100%}
+.checkout{background:#2d9d78;color:#fff;padding:15px 25px}
+.cart-section{margin-top:40px;background:#fff;padding:25px;border-radius:8px}
+.cart-item{display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:12px 0}
+.remove{color:red;cursor:pointer}.empty{color:#777}
+</style>
+</head>
+<body>
+<header>
+<h1>Demo Store</h1>
+<div class="cart" onclick="scrollToCart()">🛒 Cart (<span id="cartCount">0</span>)</div>
+</header>
+
+<div class="container">
+<h2>Products</h2>
+<div class="filters">
+<input type="text" id="searchBox" placeholder="Search products..." oninput="searchProducts()">
+<select id="categoryFilter" onchange="filterProducts()">
+<option value="all">All Categories</option>
+<option value="Electronics">Electronics</option>
+<option value="Fashion">Fashion</option>
+<option value="Home">Home</option>
+</select>
+</div>
+<div id="productList" class="products"></div>
+
+<div id="cartSection" class="cart-section">
+<h2>Your Cart</h2>
+<div id="cartItems"></div>
+<h3>Total: ₹<span id="cartTotal">0</span></h3>
+<button class="checkout" onclick="checkout()">Proceed to Checkout</button>
+</div>
+</div>
+
+<script>
+window.adobeDataLayer = window.adobeDataLayer || [];
+
+const products = [
+{id:"P1001",name:"Wireless Headphones",category:"Electronics",price:2999,brand:"DemoBrand"},
+{id:"P1002",name:"Smart Watch",category:"Electronics",price:4999,brand:"DemoBrand"},
+{id:"P1003",name:"Running Shoes",category:"Fashion",price:2499,brand:"SportBrand"},
+{id:"P1004",name:"Casual Jacket",category:"Fashion",price:3499,brand:"FashionBrand"},
+{id:"P1005",name:"Coffee Maker",category:"Home",price:3999,brand:"HomeBrand"},
+{id:"P1006",name:"Table Lamp",category:"Home",price:1499,brand:"HomeBrand"}
+];
+
+let cart = [];
+
+function pushAdobeEvent(eventName,data){
+    window.adobeDataLayer.push({
+        event:eventName,
+        timestamp:new Date().toISOString(),
+        ...data
+    });
+    console.log("Adobe Data Layer Event:",eventName,data);
+}
+
+pushAdobeEvent("pageView",{
+    page:{pageName:"Demo Store - Product Listing",pageType:"product-listing",siteSection:"Ecommerce"},
+    visitor:{loginStatus:"guest"}
+});
+
+function displayProducts(productArray){
+    const productList=document.getElementById("productList");
+    productList.innerHTML="";
+    productArray.forEach(product=>{
+        const card=document.createElement("div");
+        card.className="product";
+        card.innerHTML=`
+        <img src="https://via.placeholder.com/400x250?text=${encodeURIComponent(product.name)}" alt="${product.name}">
+        <h3>${product.name}</h3>
+        <div class="category">${product.category}</div>
+        <div class="price">₹${product.price}</div>
+        <button class="view-product" onclick="viewProduct('${product.id}')">View Product</button>
+        <button class="add-cart" onclick="addToCart('${product.id}')">Add to Cart</button>`;
+        productList.appendChild(card);
+    });
+}
+
+function viewProduct(productId){
+    const product=products.find(p=>p.id===productId);
+    if(!product)return;
+    pushAdobeEvent("productView",{
+        product:{
+            productId:product.id,productName:product.name,category:product.category,
+            brand:product.brand,price:product.price
+        }
+    });
+}
+
+function addToCart(productId){
+    const product=products.find(p=>p.id===productId);
+    if(!product)return;
+    const existingItem=cart.find(item=>item.productId===productId);
+    if(existingItem) existingItem.quantity++;
+    else cart.push({
+        productId:product.id,productName:product.name,category:product.category,
+        brand:product.brand,price:product.price,quantity:1
+    });
+    updateCart();
+    pushAdobeEvent("addToCart",{
+        ecommerce:{action:"add",product:{
+            productId:product.id,productName:product.name,category:product.category,
+            brand:product.brand,price:product.price,quantity:1
+        }},
+        cart:{itemCount:getCartItemCount(),totalValue:getCartTotal()}
+    });
+}
+
+function removeFromCart(productId){
+    const item=cart.find(item=>item.productId===productId);
+    if(!item)return;
+    pushAdobeEvent("removeFromCart",{
+        ecommerce:{action:"remove",product:{
+            productId:item.productId,productName:item.productName,category:item.category,
+            price:item.price,quantity:item.quantity
+        }},
+        cart:{itemCount:getCartItemCount(),totalValue:getCartTotal()}
+    });
+    cart=cart.filter(item=>item.productId!==productId);
+    updateCart();
+}
+
+function updateCart(){
+    const cartItems=document.getElementById("cartItems");
+    cartItems.innerHTML="";
+    if(cart.length===0) cartItems.innerHTML='<p class="empty">Your cart is empty.</p>';
+    cart.forEach(item=>{
+        const row=document.createElement("div");
+        row.className="cart-item";
+        row.innerHTML=`
+        <div><strong>${item.productName}</strong><br>Quantity: ${item.quantity}</div>
+        <div>₹${item.price*item.quantity}<br>
+        <span class="remove" onclick="removeFromCart('${item.productId}')">Remove</span></div>`;
+        cartItems.appendChild(row);
+    });
+    document.getElementById("cartCount").innerText=getCartItemCount();
+    document.getElementById("cartTotal").innerText=getCartTotal();
+}
+
+function getCartItemCount(){
+    return cart.reduce((total,item)=>total+item.quantity,0);
+}
+
+function getCartTotal(){
+    return cart.reduce((total,item)=>total+(item.price*item.quantity),0);
+}
+
+function checkout(){
+    if(cart.length===0){
+        alert("Please add a product to your cart.");
+        return;
+    }
+    pushAdobeEvent("checkoutStart",{
+        ecommerce:{action:"checkout",products:cart},
+        cart:{itemCount:getCartItemCount(),totalValue:getCartTotal()}
+    });
+    alert("Checkout event triggered. Check Adobe Data Layer.");
+}
+
+function searchProducts(){
+    const searchText=document.getElementById("searchBox").value.toLowerCase();
+    const filtered=products.filter(product=>product.name.toLowerCase().includes(searchText));
+    displayProducts(filtered);
+    pushAdobeEvent("productSearch",{
+        search:{keyword:searchText,resultCount:filtered.length}
+    });
+}
+
+function filterProducts(){
+    const category=document.getElementById("categoryFilter").value;
+    let filtered=products;
+    if(category!=="all") filtered=products.filter(product=>product.category===category);
+    displayProducts(filtered);
+    pushAdobeEvent("categoryFilter",{category:category,resultCount:filtered.length});
+}
+
+function scrollToCart(){
+    document.getElementById("cartSection").scrollIntoView({behavior:"smooth"});
+    pushAdobeEvent("cartView",{
+        cart:{itemCount:getCartItemCount(),totalValue:getCartTotal()}
+    });
+}
+
+displayProducts(products);
+updateCart();
+</script>
+</body>
+</html>
